@@ -6,6 +6,7 @@ from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSiz
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+@st.cache_data
 def heat_map(movie_ids):
     pos = ratings.columns.get_indexer(movie_ids)   # -1 for movies not in the matrix
     missing = [m for m, p in zip(movie_ids, pos) if p == -1]
