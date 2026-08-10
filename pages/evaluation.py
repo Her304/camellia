@@ -70,6 +70,8 @@ def matrix_factorisation_bias(R, K=20, lr=0.01, reg=0.05, epochs=30, seed=42):
 
     return P, Q, b_u, b_i, mu
 
+
+
 st.title('Evaluation')
 st.write(
 """
@@ -107,3 +109,66 @@ if st.button("run"):
     st.divider()
     st.write("The average RMSE range on this Matrix factorisation with biases model should be within 0.84 to 0.88")
     st.write(f"total RMSE: {test_rmse}")
+
+    RELEVANT = 4.0
+
+    mask = R_train > 0
+    mu = R_train[mask].mean()
+    n_u, n_i = mask.sum(1), mask.sum(0)
+    user_mean = np.divide(R_train.sum(1), n_u, out=np.full(R_train.shape[0], mu), where=n_u > 0)
+    item_mean = np.divide(R_train.sum(0), n_i, out=np.full(R_train.shape[1], mu), where=n_i > 0)
+    b_u, b_i = user_mean - mu, item_mean - mu
+
+    denom = (R_train > 0) @ np.abs(sim_matrix)
+    denom[denom == 0] = 1e-10
+    cf_scores = (R_train @ sim_matrix) / denom
+
+    _grouped = {}
+    for u, i, r in test_set:
+        _grouped.setdefault(u, []).append((i, r))
+    by_user = {u: (np.array([i for i, _ in v]), np.array([r for _, r in v]))
+            for u, v in _grouped.items()}
+
+    def precision_at_k(score_fn, K=5, relevant=RELEVANT): 
+        precisions, recalls = [], []
+        for u, (items, truth) in by_user.items():
+            rel = truth >= relevant
+            if len(items) < K or not rel.any():
+                continue
+            top = np.argsort(-np.asarray(score_fn(u, items), dtype=float))[:K]
+            precisions.append(rel[top].sum() / K)
+            recalls.append(rel[top].sum() / rel.sum())
+        return np.mean(precisions), np.mean(recalls), len(precisions)
+
+
+    rng = np.random.default_rng(0)
+    models = {
+        "Random":                 lambda u, items: rng.random(len(items)),
+        "Popularity (item mean)": lambda u, items: item_mean[items],
+        "User mean + item bias":  lambda u, items: mu + b_u[u] + b_i[items],
+        "Item-item cosine":       lambda u, items: cf_scores[u, items],
+        "MF (K=40)":              lambda u, items: P[u] @ Q[items].T,
+        "MF + bias (K=40)":       lambda u, items: mu + b_u[u] + b_i[items] + P[u] @ Q[items].T,
+    }
+
+    def precision_table(K):
+        rows = []
+        for name, fn in models.items():
+            p, r, n = precision_at_k(fn, K)
+            rows.append({"Model": name, "precision": p, "recall": r, "users": n})
+        return pd.DataFrame(rows)
+
+    st.divider()
+    st.write("Precision@K is the fraction the user actually liked of the K movies user recommend")
+    st.write(f"Precision@{K_n}")
+    st.dataframe(
+        precision_table(K_n),
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "precision": st.column_config.NumberColumn(f"P@{K_n}", format="%.4f"),
+            "recall":    st.column_config.NumberColumn(f"R@{K_n}", format="%.4f"),
+            "users":     st.column_config.NumberColumn(
+                "users scored", help="Users with at least K held-out ratings and at least one rated >= 4"),
+        },
+    )
