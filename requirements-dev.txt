@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Notebook testing (main.ipynb)
+ipytest==0.14.2
+pytest==7.4.4
